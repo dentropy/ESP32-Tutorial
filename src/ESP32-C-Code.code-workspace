@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../Projects/ESP32-C-Code"
+		},
+		{
+			"name": "ESP32 Scripts",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}

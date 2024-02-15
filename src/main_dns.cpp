@@ -1,0 +1,210 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include "AsyncJson.h"
+#include "ArduinoJson.h"
+#include <ESPmDNS.h>
+
+#define PIN_IN1  19 // ESP32 pin GPIO19 connected to the IN1 pin L298N
+#define PIN_IN2  18 // ESP32 pin GPIO18 connected to the IN2 pin L298N
+#define PIN_ENA  17 // ESP32 pin GPIO17 connected to the EN1 pin L298N
+
+
+
+unsigned long previousMillis = 0;  // Variable to store the last time the code was executed
+const long interval = 1000;        // Interval in milliseconds (1 second)
+
+
+
+AsyncWebServer server(80);
+const char *ssid = "GL-AR750S-398";
+const char *password = "goodlife";
+
+
+boolean L1 = false;
+boolean L2 = false;
+
+void notFound(AsyncWebServerRequest *request)
+{
+  request->send(404, "application/json", "{\"message\":\"Not found\"}");
+}
+void setup()
+{
+
+  pinMode(PIN_IN1, OUTPUT);
+  pinMode(PIN_IN2, OUTPUT);
+  pinMode(PIN_ENA, OUTPUT);
+
+
+  
+
+
+
+
+  Serial.begin(9600);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.printf("WiFi Failed!\n");
+  }
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+
+
+  // // Initialize mDNS
+  if (!MDNS.begin("esp32")) {   // Set the hostname to "esp32.local"
+    Serial.println("Error setting up MDNS responder!");
+  }
+  Serial.println("mDNS responder started");
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", "{\"message\":\"Welcome\"}");
+  });
+  server.on("/clockwise", HTTP_GET, [](AsyncWebServerRequest *request) {
+    L1 = true;
+    L2 = false;
+    request->send(200, "application/json", "{\"message\":\"clockwise\"}");
+  });
+  server.on("/counterclockwise", HTTP_GET, [](AsyncWebServerRequest *request) {
+    L1 = false;
+    L2 = true;
+    request->send(200, "application/json", "{\"message\":\"counterclockwise\"}");
+  });
+  server.on("/stop", HTTP_GET, [](AsyncWebServerRequest *request) {
+    L1 = false;
+    L2 = false;
+    request->send(200, "application/json", "{\"message\":\"stop\"}");
+  });
+  server.on("/get-message", HTTP_GET, [](AsyncWebServerRequest *request) {
+    StaticJsonDocument<100> data;
+    if (request->hasParam("message"))
+    {
+      data["message"] = request->getParam("message")->value();
+    }
+    else
+    {
+      data["message"] = "No message parameter";
+    }
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response);
+  });
+  server.on("/settings", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    StaticJsonDocument<100> data;
+    Serial.println("Running inside settings");
+    if (request->hasParam("body", true))
+    {
+      AsyncWebParameter* p = request->getParam("body", true);
+      String json = p->value();
+
+      StaticJsonDocument<200> doc;
+      deserializeJson(doc, json);
+      const char* mah_direction = doc["direction"];
+      Serial.println("mah_direction");
+      Serial.println(mah_direction);
+      if( strcmp(mah_direction, "stop") == 0){
+        Serial.println("STOP");
+        L1 = false;
+        L2 = false;
+      }
+      if(  strcmp(mah_direction, "clockwise") == 0  ){
+        Serial.println("CLOCKWISE");
+        L1 = true;
+        L2 = false;
+      }
+      if( strcmp(mah_direction, "counterclockwise") == 0 ){
+        Serial.println("counterclockwise");
+        L1 = false;
+        L2 = true;
+      }
+    }
+    else
+    {
+      data["message"] = "No message parameter";
+    }
+    request->send(200, "application/json", "{\"message\":\"settings\"}");
+    
+  });
+  AsyncCallbackJsonWebHandler *handler = new AsyncCallbackJsonWebHandler("/post-message", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    StaticJsonDocument<200> data;
+    if (json.is<JsonArray>())
+    {
+      data = json.as<JsonArray>();
+    }
+    else if (json.is<JsonObject>())
+    {
+      data = json.as<JsonObject>();
+    }
+    String response;
+    serializeJson(data, response);
+    request->send(200, "application/json", response);
+    Serial.println(response);
+  });
+  server.addHandler(handler);
+server.onNotFound(notFound);
+  server.begin();
+}
+void loop()
+{
+  analogWrite(PIN_ENA, 255);
+
+
+  digitalWrite(PIN_IN1, L1);   // control the motor's direction in anti-clockwise
+  digitalWrite(PIN_IN2, L2);  // control the motor's direction in anti-clockwise
+
+  unsigned long currentMillis = millis();  // Get the current time
+
+  // Check if one second has elapsed since the last execution
+  if (currentMillis - previousMillis >= interval) {
+    // Save the current time for the next iteration
+    previousMillis = currentMillis;
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    // Your code to run once per second goes here
+  }
+//  digitalWrite(PIN_IN1, LOW);   // control the motor's direction in anti-clockwise
+//  digitalWrite(PIN_IN2, LOW);  // control the motor's direction in anti-clockwise
+//  delay(5000); // rotate at maximum speed 2 seconds in clockwise direction
+//
+//  digitalWrite(PIN_IN1, HIGH); // control the motor's direction in clockwise
+//  digitalWrite(PIN_IN2, LOW);  // control the motor's direction in clockwise
+
+//  for (int speed = 0; speed <= 255; speed++) {
+//    analogWrite(PIN_ENA, speed); // speed up
+//    delay(10);
+//  }
+
+ // delay(5000); // rotate at maximum speed 2 seconds in clockwise direction
+
+
+//  digitalWrite(PIN_IN1, LOW);   // control the motor's direction in anti-clockwise
+//  digitalWrite(PIN_IN2, LOW);  // control the motor's direction in anti-clockwise
+//  delay(5000); // rotate at maximum speed 2 seconds in clockwise direction
+
+//  /// Doesn't do anything
+//
+//  // change direction
+//  digitalWrite(PIN_IN1, LOW);   // control the motor's direction in anti-clockwise
+//  digitalWrite(PIN_IN2, HIGH);  // control the motor's direction in anti-clockwise
+//
+//  delay(5000); // rotate at maximum speed for 2 seconds in anti-clockwise direction
+
+
+
+
+
+  
+//   /// Doesn't do anything
+//  for (int speed = 255; speed >= 0; speed--) {
+//    analogWrite(PIN_ENA, speed); // speed down
+//    delay(10);
+//  }
+
+  //delay(2000); // stop motor 2 second
+
+
+
+}
+
